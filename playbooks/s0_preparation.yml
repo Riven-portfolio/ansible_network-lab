@@ -1,0 +1,91 @@
+---
+# S0 | 準備與基線
+# 目標: 環境就緒，避免後續卡死
+
+- name: 基礎配置檢查
+  hosts: cisco_devices
+  gather_facts: no
+  tasks:
+    - name: 測試連接
+      cisco.ios.ios_command:
+        commands:
+          - show version
+      register: version_output
+      ignore_errors: yes
+
+    - name: 顯示設備資訊
+      debug:
+        msg:
+          - "✅ {{ inventory_hostname }} 連接成功"
+          - "版本: {{ version_output.stdout_lines[0] | default('N/A') }}"
+      when: version_output is succeeded
+
+    - name: 連接失敗警告
+      debug:
+        msg:
+          - "❌ {{ inventory_hostname }} 連接失敗"
+          - "請檢查: IP 地址、SSH/Telnet 設定、認證資訊"
+      when: version_output is failed
+
+- name: 初始化基本配置
+  hosts: cisco_devices
+  gather_facts: no
+  tasks:
+    - name: 設定 Hostname
+      cisco.ios.ios_config:
+        lines:
+          - hostname {{ inventory_hostname }}
+
+    - name: 基本設定 (全局)
+      cisco.ios.ios_config:
+        lines:
+          - no ip domain-lookup
+          - service password-encryption
+
+    - name: 配置 Console Line
+      cisco.ios.ios_config:
+        lines:
+          - exec-timeout 0 0
+          - logging synchronous
+        parents:
+          - line con 0
+
+    - name: 配置 VTY Lines
+      cisco.ios.ios_config:
+        lines:
+          - exec-timeout 15 0
+          - logging synchronous
+          - transport input all
+        parents:
+          - line vty 0 4
+
+    - name: 啟用 IP Routing (路由器)
+      cisco.ios.ios_config:
+        lines:
+          - ip routing
+      when: inventory_hostname in groups['hq_routers'] or inventory_hostname in groups['branch_routers'] or inventory_hostname in groups['isp']
+
+- name: 環境檢查報告
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: 顯示準備階段完成訊息
+      debug:
+        msg:
+          - "════════════════════════════════════════"
+          - "  S0 準備階段完成"
+          - "════════════════════════════════════════"
+          - ""
+          - "✅ 已完成:"
+          - "  • 連接測試"
+          - "  • Hostname 設定"
+          - "  • 基本配置"
+          - "  • IP Routing 啟用"
+          - ""
+          - "📋 下一步:"
+          - "  執行: ansible-playbook playbooks/s1_hq_vlan_hsrp.yml"
+          - ""
+          - "💡 提示:"
+          - "  • 依序執行 S1-S8 階段"
+          - "  • 每階段完成後進行驗證"
+          - "  • 使用 --tags 可執行特定部分"
